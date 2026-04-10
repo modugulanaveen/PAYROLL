@@ -26,7 +26,7 @@ export default function EPFECRGenerator({ company = {}, employees = [] }) {
 
   // Initialize pfData from employees when component mounts or employees change
   useEffect(() => {
-    if (employees && employees.length > 0 && pfData.length === 0) {
+    if (employees && employees.length > 0) {
       // Convert employees to PF data format
       const pfRecords = employees.map((emp) => {
         // Calculate PF wages: Basic + DA only (as per EPFO rules)
@@ -65,7 +65,7 @@ export default function EPFECRGenerator({ company = {}, employees = [] }) {
       });
       setPFData(pfRecords);
     }
-  }, [employees, pfData.length, setPFData]);
+  }, [employees, setPFData]);
 
   // Calculator states
   const [calcBasic, setCalcBasic] = useState('');

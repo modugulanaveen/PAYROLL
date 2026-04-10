@@ -144,7 +144,9 @@ export default function ExcelUpload({ employees = [], setEmployees, company }) {
     'UAN', 'year', 'pay', 'department', 'designation', 'location',
     'account', 'bank', 'ifsc', 'pan', 'uan', 'esi number','number',
     'phone', 'phone number', 'mobile', 'pf number', 'aadhar', 'aadhar number', 'email',
-    'full name', 'fname', 'first name', 'fullname', 'employee name'
+    'full name', 'fname', 'first name', 'fullname', 'employee name', 'employeename',
+    'emp name', 'empname', 'employee_name', 'emp_name',
+    'lop', 'loss', 'ncp', 'non-calculated', 'paid days'
   ];
 
   const detectColumnType = (columnName) => {
@@ -154,6 +156,24 @@ export default function ExcelUpload({ employees = [], setEmployees, company }) {
       .replace(/[^a-z\s]/g, '')
       .replace(/\s+/g, ' ')
       .trim();
+    
+    // Check for LOP and NCP FIRST (before other checks) - these are critical fields
+    if (col.includes('lop') || 
+        col.includes('loss of pay') || 
+        col.includes('loss of paid') ||
+        col.includes('lossofpay') ||
+        col.includes('unpaid') ||
+        (col.includes('loss') && col.includes('day'))) {
+      return 'info';
+    }
+    
+    // Check for NCP days
+    if (col.includes('ncp') || 
+        col.includes('non calculated') || 
+        col.includes('noncalculated') ||
+        (col.includes('non') && col.includes('day'))) {
+      return 'info';
+    }
     
     // Check if it's a total field FIRST (before other checks)
     if (totalFields.some(pattern => col.includes(pattern))) {
@@ -180,9 +200,8 @@ export default function ExcelUpload({ employees = [], setEmployees, company }) {
       return 'info';
     }
     
-    // Check for LOP and paid days
-    if (col.includes('lop') || col.includes('loss') || 
-        (col.includes('paid') && col.includes('day'))) {
+    // Check for paid days
+    if ((col.includes('paid') && col.includes('day')) || col.includes('paiddays')) {
       return 'info';
     }
     
@@ -406,7 +425,19 @@ export default function ExcelUpload({ employees = [], setEmployees, company }) {
       
       switch(colType) {
         case 'info':
-          if (value && value.toString().trim() !== '') {
+          // Always capture info fields, even if empty or zero
+          // Special handling for numeric days fields - store as numeric
+          if (header.toLowerCase().includes('lop') || 
+              header.toLowerCase().includes('loss') ||
+              header.toLowerCase().includes('ncp') ||
+              header.toLowerCase().includes('non calculated') ||
+              header.toLowerCase().includes('paid days') ||
+              header.toLowerCase().includes('paiddays') ||
+              (header.toLowerCase().includes('paid') && header.toLowerCase().includes('day'))) {
+            // For days fields, always store even if 0
+            categories.info[header.toLowerCase()] = parseNumber(value);
+          } else if (value && value.toString().trim() !== '') {
+            // For other info fields, only store if not empty
             categories.info[header.toLowerCase()] = value.toString().trim();
           }
           break;
@@ -613,21 +644,27 @@ export default function ExcelUpload({ employees = [], setEmployees, company }) {
     const totals = calculatePayrollTotals(categories);
     
     // Extract employee info - Try multiple name field variations
-    const employeeName = categories.info['name'] || 
-                        categories.info['employee name'] || 
+    const employeeName = categories.info['employee name'] ||
+                        categories.info['name'] || 
                         categories.info['employee'] ||
                         categories.info['full name'] ||
                         categories.info['fname'] ||
                         categories.info['first name'] ||
                         categories.info['fullname'] ||
                         categories.info['employeename'] ||
+                        categories.info['employee_name'] ||
+                        categories.info['emp_name'] ||
+                        categories.info['empl name'] ||
                         `Employee ${index + 1}`;
     
-    const employeeId = categories.info['employee'] || 
+    const employeeId = categories.info['employee id'] ||
+                      categories.info['employee_id'] ||
+                      categories.info['employee'] || 
                       categories.info['id'] || 
                       categories.info['code'] || 
                       categories.info['employeeid'] ||
-                      categories.info['employee id'] ||
+                      categories.info['emp id'] ||
+                      categories.info['empid'] ||
                       `EMP${String(employees.length + index + 1).padStart(4, '0')}`;
     
     // Get UAN (Universal Account Number)
@@ -636,14 +673,31 @@ export default function ExcelUpload({ employees = [], setEmployees, company }) {
                categories.info['universal account number'] || 
                "";
     
-    // Get paid days and LOP days
+    // Get paid days and LOP days - check multiple variations
     const paidDays = parseFloat(categories.info['paid days'] || 
+                               categories.info['paiddays'] ||
                                categories.info['paid'] || 
                                categories.info['days'] || 0);
     
-    const lossOfPayDays = parseFloat(categories.info['lop days'] || 
-                                    categories.info['lop'] || 
-                                    categories.info['loss'] || 0);
+    const lossOfPayDays = parseFloat(
+      categories.info['lop days'] || 
+      categories.info['lopdays'] ||
+      categories.info['lop'] || 
+      categories.info['loss of paid days'] ||
+      categories.info['loss of pay days'] ||
+      categories.info['lossofpaiddays'] ||
+      categories.info['lossofpay'] ||
+      categories.info['loss'] || 
+      categories.info['unpaid days'] ||
+      categories.info['unpaid'] ||
+      categories.info['ncp days'] ||
+      categories.info['ncpdays'] ||
+      categories.info['ncp'] ||
+      categories.info['non calculated days'] ||
+      categories.info['non calculated period'] ||
+      categories.info['noncalculated'] ||
+      0
+    );
     
     // Get pay date
     const payDate = parseDate(categories.info['pay date'] || 
@@ -861,10 +915,11 @@ export default function ExcelUpload({ employees = [], setEmployees, company }) {
     const templateHeaders = [
       'UAN Number',
       'Employee ID',
+      'Employee Name',
       'Pay Period',
       'Pay Date',
       'Paid Days',
-      'Loss of Paid Days',
+      'LOP Days',
       'Basic Pay',
       'HRA',
       'Special Allowance',
@@ -879,6 +934,7 @@ export default function ExcelUpload({ employees = [], setEmployees, company }) {
     const sampleData = [
       '101411733970',
       'G20',
+      'John Doe',
       'Jan-26',
       '31-01-2026',
       '22',
@@ -903,6 +959,8 @@ export default function ExcelUpload({ employees = [], setEmployees, company }) {
       '# SIMPLE PAYROLL TEMPLATE',
       '# Just fill in the data rows, no instructions in data columns',
       '# Delete any columns you don\'t need',
+      '# LOP Days = Loss of Pay Days (reflects in both payslip AND PF ECR)',
+      '# Paid Days = Days worked/paid (for payslip display)',
       '# Save as CSV and upload'
     ].join('\n');
     
@@ -924,10 +982,11 @@ export default function ExcelUpload({ employees = [], setEmployees, company }) {
     const templateHeaders = [
       'UAN Number',
       'Employee ID',
+      'Employee Name',
       'Pay Period',
       'Pay Date',
       'Paid Days',
-      'Loss of Paid Days',
+      'LOP Days',
       'Basic Pay',
       'HRA',
       'Special Allowance',
@@ -943,10 +1002,11 @@ export default function ExcelUpload({ employees = [], setEmployees, company }) {
       {
         'UAN Number': '101411733970',
         'Employee ID': 'G20',
+        'Employee Name': 'John Doe',
         'Pay Period': 'Jan-26',
         'Pay Date': '31-01-2026',
         'Paid Days': 22,
-        'Loss of Paid Days': 0,
+        'LOP Days': 0,
         'Basic Pay': 50000,
         'HRA': 20000,
         'Special Allowance': 3000,
@@ -960,10 +1020,11 @@ export default function ExcelUpload({ employees = [], setEmployees, company }) {
       {
         'UAN Number': '',
         'Employee ID': 'EMP001',
+        'Employee Name': 'Jane Smith',
         'Pay Period': 'Feb-26',
         'Pay Date': '28-02-2026',
         'Paid Days': 22,
-        'Loss of Paid Days': 0,
+        'LOP Days': 0,
         'Basic Pay': 50000,
         'HRA': 20000,
         'Special Allowance': 0,
@@ -994,7 +1055,7 @@ export default function ExcelUpload({ employees = [], setEmployees, company }) {
     });
     
     // Set column widths
-    const colWidths = [15, 15, 12, 12, 12, 18, 12, 12, 18, 15, 12, 15, 15, 12, 15];
+    const colWidths = [15, 15, 18, 12, 12, 12, 12, 12, 12, 18, 15, 12, 15, 15, 12, 15];
     worksheet.columns = worksheet.columns.map((col, idx) => ({ width: colWidths[idx] || 12 }));
     
     // Add instructions sheet
@@ -1010,17 +1071,18 @@ export default function ExcelUpload({ employees = [], setEmployees, company }) {
     instructionsSheet.addRow(['6. Delete sample rows before uploading']);
     instructionsSheet.addRow(['7. Save as .xlsx and upload to the system']);
     instructionsSheet.addRow([]);
-    instructionsSheet.addRow(['IMPORTANT INFORMATION FIELDS:']);
-    instructionsSheet.addRow(['Optional: Phone Number, PF Number, Aadhar Number, PAN Number']);
-    instructionsSheet.addRow(['These are treated as employee information and not used in salary calculations']);
+    instructionsSheet.addRow(['IMPORTANT FIELDS:']);
+    instructionsSheet.addRow(['- Paid Days = Days worked/paid (shown in payslip)']);
+    instructionsSheet.addRow(['- LOP Days = Loss of Pay Days (shown in payslip AND used as NCP Days in PF ECR file)']);
     instructionsSheet.addRow([]);
     instructionsSheet.addRow(['COLUMN DESCRIPTIONS:']);
     instructionsSheet.addRow(['- UAN Number: Universal Account Number for PF']);
     instructionsSheet.addRow(['- Employee ID: Unique employee identifier']);
+    instructionsSheet.addRow(['- Employee Name: Full name of employee']);
     instructionsSheet.addRow(['- Pay Period: Month and year (Jan-26, Feb-26, etc.)']);
     instructionsSheet.addRow(['- Pay Date: Payment date (DD-MM-YYYY format)']);
-    instructionsSheet.addRow(['- Paid Days: Number of days worked']);
-    instructionsSheet.addRow(['- Loss of Paid Days: LOP/Leave without pay days']);
+    instructionsSheet.addRow(['- Paid Days: Number of days worked/paid (shown in payslip)']);
+    instructionsSheet.addRow(['- LOP Days: Loss of Pay Days (shown in payslip AND as NCP in ECR)']);
     instructionsSheet.addRow(['- Basic Pay: Base salary amount']);
     instructionsSheet.addRow(['- HRA: House Rent Allowance']);
     instructionsSheet.addRow(['- Special Allowance: Any additional allowances']);
@@ -1031,7 +1093,7 @@ export default function ExcelUpload({ employees = [], setEmployees, company }) {
     instructionsSheet.addRow(['- Insurance: Insurance premium deduction']);
     instructionsSheet.addRow(['- Total Deductions: Sum of all deductions']);
     
-    instructionsSheet.columns = [{ width: 70 }];
+    instructionsSheet.columns = [{ width: 80 }];
     
     // Generate file
     const buffer = await workbook.xlsx.writeBuffer();
